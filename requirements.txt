@@ -1,0 +1,9 @@
+# Python 3.9+  —  pip install -r requirements.txt
+pywebview>=5.0
+
+# Linux only: pick ONE GUI backend (or install the distro packages listed in README-desktop.md)
+# pywebview[qt]      ; sys_platform == "linux"
+# pywebview[gtk]     ; sys_platform == "linux"
+
+# Optional: build a standalone executable
+# pyinstaller>=6.0
