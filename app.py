@@ -550,6 +550,43 @@ def _skip_term(data: bytes, start: int, enc: int) -> int:
     return (idx + 1) if idx != -1 else len(data)
 
 
+def _parse_sylt_frame(payload: bytes) -> str:
+    if len(payload) < 10:
+        return ""
+    enc = payload[0]
+    time_format = payload[4]
+    p = _skip_term(payload, 6, enc)
+    lines: list[str] = []
+    while p < len(payload):
+        text_start = p
+        p = _skip_term(payload, p, enc)
+        if p + 4 > len(payload):
+            break
+        text_bytes = payload[text_start : p - (2 if enc in (1, 2) else 1)]
+        time_ms = struct.unpack(">I", payload[p : p + 4])[0]
+        p += 4
+        line_text = _decode_id3_text(enc, text_bytes).strip()
+        if line_text:
+            sec = time_ms * 0.026 if time_format == 1 else time_ms / 1000.0
+            mm = int(sec // 60)
+            ss = int(sec % 60)
+            cs = int((sec % 1) * 100)
+            lines.append(f"[{mm:02d}:{ss:02d}.{cs:02d}] {line_text}")
+    return "\n".join(lines)
+
+
+def _parse_txxx_lyrics(payload: bytes) -> str:
+    if len(payload) < 5:
+        return ""
+    enc = payload[0]
+    desc_end = _skip_term(payload, 1, enc)
+    desc_bytes = payload[1 : desc_end - (2 if enc in (1, 2) else 1)]
+    desc = _decode_id3_text(enc, desc_bytes).strip().upper()
+    if desc in ("LYRICS", "UNSYNCEDLYRICS", "SYNCEDLYRICS"):
+        return _decode_id3_text(enc, payload[desc_end:]).strip()
+    return ""
+
+
 def extract_audio_metadata(data: bytes) -> dict:
     """Extract title, artist, embedded lyrics, and cover art (as data URL) from ID3v2 or MP4/M4A bytes."""
     result: dict = {"title": None, "artist": None, "lyrics": None, "coverDataUrl": None}
@@ -622,6 +659,14 @@ def extract_audio_metadata(data: bytes) -> dict:
                 txt = _decode_id3_text(enc, payload[body_pos:]).strip()
                 if txt:
                     result["lyrics"] = txt
+            elif fid in ("SYLT", "SLT") and not result["lyrics"] and len(payload) > 8:
+                txt = _parse_sylt_frame(payload)
+                if txt:
+                    result["lyrics"] = txt
+            elif fid == "TXXX" and not result["lyrics"] and len(payload) > 6:
+                txt = _parse_txxx_lyrics(payload)
+                if txt:
+                    result["lyrics"] = txt
             elif fid in ("APIC", "PIC") and not result["coverDataUrl"] and len(payload) > 8:
                 enc = payload[0]
                 if fid == "PIC":
@@ -670,6 +715,20 @@ def extract_audio_metadata(data: bytes) -> dict:
                         mime = "image/png" if img_bytes[:4] == b"\x89PNG" else "image/jpeg"
                         b64 = base64.b64encode(img_bytes).decode("ascii")
                         result["coverDataUrl"] = f"data:{mime};base64,{b64}"
+
+    # ---- FLAC / OGG Vorbis Comments ----
+    if not result["lyrics"]:
+        for marker in (b"LYRICS=", b"UNSYNCEDLYRICS=", b"SYNCEDLYRICS="):
+            v_idx = data.find(marker)
+            if v_idx != -1:
+                start = v_idx + len(marker)
+                end_v = data.find(b"\x00", start, min(start + 65536, len(data)))
+                if end_v == -1:
+                    end_v = min(start + 65536, len(data))
+                txt = data[start:end_v].decode("utf-8", errors="replace").strip()
+                if len(txt) > 10:
+                    result["lyrics"] = txt
+                    break
 
     return result
 

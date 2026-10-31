@@ -5850,18 +5850,76 @@
 
   function parseUsltFrame(frame) {
     if (!frame || frame.length < 5) return '';
-    let p = 0;
-    const enc = frame[p++];
-    p += 3; // 3-byte language code
+    const enc = frame[0];
+    let p = 4; // skip enc (1) + lang (3)
     if (enc === 1 || enc === 2) {
       while (p + 1 < frame.length && !(frame[p] === 0 && frame[p + 1] === 0)) p += 2;
-      p += 2;
+      p = Math.min(p + 2, frame.length);
     } else {
       while (p < frame.length && frame[p] !== 0) p++;
-      p += 1;
+      p = Math.min(p + 1, frame.length);
     }
-    if (p >= frame.length) return '';
-    return decodeId3Text(frame.subarray(p), enc).replace(/\0/g, '').trim();
+    const txt = decodeId3Text(frame.subarray(p), enc).replace(/\0/g, '').trim();
+    if (txt) return txt;
+    const full = decodeId3Text(frame.subarray(4), enc).replace(/\0/g, '').trim();
+    return (full && full.length > 15) ? full : '';
+  }
+
+  function parseSyltFrame(frame) {
+    if (!frame || frame.length < 10) return '';
+    const enc = frame[0];
+    const timeFormat = frame[4];
+    let p = 6;
+    if (enc === 1 || enc === 2) {
+      while (p + 1 < frame.length && !(frame[p] === 0 && frame[p + 1] === 0)) p += 2;
+      p = Math.min(p + 2, frame.length);
+    } else {
+      while (p < frame.length && frame[p] !== 0) p++;
+      p = Math.min(p + 1, frame.length);
+    }
+    const lines = [];
+    while (p < frame.length) {
+      const textStart = p;
+      if (enc === 1 || enc === 2) {
+        while (p + 1 < frame.length && !(frame[p] === 0 && frame[p + 1] === 0)) p += 2;
+        p = Math.min(p + 2, frame.length);
+      } else {
+        while (p < frame.length && frame[p] !== 0) p++;
+        p = Math.min(p + 1, frame.length);
+      }
+      if (p + 4 > frame.length) break;
+      const textBytes = frame.subarray(textStart, p - (enc === 1 || enc === 2 ? 2 : 1));
+      const timeMs = ((frame[p] << 24) | (frame[p + 1] << 16) | (frame[p + 2] << 8) | frame[p + 3]) >>> 0;
+      p += 4;
+      const lineText = decodeId3Text(textBytes, enc).replace(/\0/g, '').trim();
+      if (lineText) {
+        const sec = (timeFormat === 1 ? timeMs * 0.026 : timeMs / 1000);
+        const mm = Math.floor(sec / 60);
+        const ss = Math.floor(sec % 60);
+        const cs = Math.floor((sec % 1) * 100);
+        lines.push(`[${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}.${String(cs).padStart(2, '0')}] ${lineText}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  function parseTxxxLyrics(frame) {
+    if (!frame || frame.length < 5) return '';
+    const enc = frame[0];
+    let p = 1;
+    const descStart = p;
+    if (enc === 1 || enc === 2) {
+      while (p + 1 < frame.length && !(frame[p] === 0 && frame[p + 1] === 0)) p += 2;
+      p = Math.min(p + 2, frame.length);
+    } else {
+      while (p < frame.length && frame[p] !== 0) p++;
+      p = Math.min(p + 1, frame.length);
+    }
+    const desc = decodeId3Text(frame.subarray(descStart, p - (enc === 1 || enc === 2 ? 2 : 1)), enc).replace(/\0/g, '').trim().toUpperCase();
+    if (desc === 'LYRICS' || desc === 'UNSYNCEDLYRICS' || desc === 'SYNCEDLYRICS') {
+      return decodeId3Text(frame.subarray(p), enc).replace(/\0/g, '').trim();
+    }
+    return '';
   }
 
   function findSubarray(buf, needle, from = 0) {
@@ -5897,12 +5955,12 @@
   async function getAudioMetadataBuffer(file) {
     if (!file || !file.size) return new Uint8Array(0);
     try {
-      if (file.size <= 1572864) {
+      if (file.size <= 2097152) {
         const buf = await file.arrayBuffer();
         return new Uint8Array(buf);
       }
-      const headBuf = await (file.slice(0, 262144)).arrayBuffer();
-      const tailBuf = await (file.slice(Math.max(262144, file.size - 1048576), file.size)).arrayBuffer();
+      const headBuf = await (file.slice(0, 2097152)).arrayBuffer();
+      const tailBuf = await (file.slice(Math.max(2097152, file.size - 1048576), file.size)).arrayBuffer();
       const head = new Uint8Array(headBuf);
       const tail = new Uint8Array(tailBuf);
       const combined = new Uint8Array(head.length + tail.length);
@@ -5935,6 +5993,10 @@
           offset += (version === 3 ? 4 + extSize : extSize);
         }
 
+        let syltLrc = null;
+        let usltLrc = null;
+        let txxxLrc = null;
+
         while (offset < end) {
           if (version === 2) {
             if (offset + 6 > end) break;
@@ -5942,11 +6004,16 @@
             const size = (bytes[offset + 3] << 16) | (bytes[offset + 4] << 8) | bytes[offset + 5];
             offset += 6;
             if (!id.trim() || size <= 0 || offset + size > end) break;
-            if (id === 'ULT') {
+            if (id === 'ULT' && !usltLrc) {
               let fData = bytes.subarray(offset, offset + size);
               if (tagFlags & 0x80) fData = removeUnsync(fData);
               const txt = parseUsltFrame(fData);
-              if (txt) return txt;
+              if (txt) usltLrc = txt;
+            } else if (id === 'SLT' && !syltLrc) {
+              let fData = bytes.subarray(offset, offset + size);
+              if (tagFlags & 0x80) fData = removeUnsync(fData);
+              const txt = parseSyltFrame(fData);
+              if (txt) syltLrc = txt;
             }
             offset += size;
           } else {
@@ -5959,16 +6026,30 @@
             const fFlags2 = bytes[offset + 9];
             offset += 10;
             if (size <= 0 || offset + size > end) break;
-            if (id === 'USLT') {
+            if (id === 'USLT' && !usltLrc) {
               let fData = bytes.subarray(offset, offset + size);
               if ((tagFlags & 0x80) || (version === 4 && (fFlags2 & 0x02))) fData = removeUnsync(fData);
               if (version === 4 && (fFlags2 & 0x01)) fData = fData.subarray(4);
               const txt = parseUsltFrame(fData);
-              if (txt) return txt;
+              if (txt) usltLrc = txt;
+            } else if (id === 'SYLT' && !syltLrc) {
+              let fData = bytes.subarray(offset, offset + size);
+              if ((tagFlags & 0x80) || (version === 4 && (fFlags2 & 0x02))) fData = removeUnsync(fData);
+              if (version === 4 && (fFlags2 & 0x01)) fData = fData.subarray(4);
+              const txt = parseSyltFrame(fData);
+              if (txt) syltLrc = txt;
+            } else if (id === 'TXXX' && !txxxLrc) {
+              let fData = bytes.subarray(offset, offset + size);
+              if ((tagFlags & 0x80) || (version === 4 && (fFlags2 & 0x02))) fData = removeUnsync(fData);
+              if (version === 4 && (fFlags2 & 0x01)) fData = fData.subarray(4);
+              const txt = parseTxxxLyrics(fData);
+              if (txt) txxxLrc = txt;
             }
             offset += size;
           }
         }
+        const id3Lrc = syltLrc || usltLrc || txxxLrc;
+        if (id3Lrc) return id3Lrc;
       }
 
       // 2. MP4 / M4A (©lyr atom)
@@ -5978,9 +6059,9 @@
         if (txt) return txt;
       }
 
-      // 3. Vorbis Comments (FLAC / Ogg LYRICS=...)
+      // 3. Vorbis Comments (FLAC / Ogg LYRICS=... / UNSYNCEDLYRICS=... / SYNCEDLYRICS=...)
       const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-      const lm = text.match(/\bLYRICS=([^\x00]{10,})/i);
+      const lm = text.match(/\b(?:UNSYNCEDLYRICS|SYNCEDLYRICS|LYRICS)=([^\x00]{10,})/i);
       if (lm && lm[1]) return lm[1].trim();
     } catch (_) {}
     return null;
@@ -7429,6 +7510,18 @@
     }
     const isSongChange = lastLoadedSong !== null && lastLoadedSong !== s;
     lastLoadedSong = s;
+
+    // If song does not have lyrics loaded, check embedded tags directly from file (NO downloading)
+    if ((!s.lyrics || !s.lyrics.length) && s.file && !s._embeddedChecked) {
+      s._embeddedChecked = true;
+      extractEmbeddedLyrics(s.file).then(emb => {
+        if (emb) {
+          s.lyrics = parseLrc(emb, s.duration || 180);
+          if (current() === s) renderLyrics();
+          saveLibraryToDB();
+        }
+      }).catch(() => {});
+    }
 
     $('title').textContent = s.name;
     $('likeBtn').classList.toggle('liked', s.liked);
