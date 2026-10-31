@@ -3151,6 +3151,106 @@
     gap: 8px;
   }
 
+  /* Ghost Homescreen (Skeleton UI placeholders) */
+  .ghost-shimmer {
+    position: relative;
+    overflow: hidden;
+    background: var(--surface-item, rgba(255, 255, 255, 0.08));
+    border-radius: 8px;
+  }
+  .ghost-shimmer::after {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.14) 50%,
+      transparent 100%
+    );
+    animation: ghostShimmerAnim 1.4s infinite ease-in-out;
+  }
+  [data-theme="light"] .ghost-shimmer {
+    background: rgba(0, 0, 0, 0.06);
+  }
+  [data-theme="light"] .ghost-shimmer::after {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(0, 0, 0, 0.07) 50%,
+      transparent 100%
+    );
+  }
+  @keyframes ghostShimmerAnim {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+  .ghost-recent-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--box-bg);
+    border: 1px solid var(--box-border);
+    border-radius: 14px;
+    padding: 10px;
+    pointer-events: none;
+    user-select: none;
+  }
+  .ghost-recent-card .ghost-thumb {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 10px;
+  }
+  .ghost-line-title {
+    height: 12px;
+    width: 72%;
+    border-radius: 6px;
+  }
+  .ghost-line-sub {
+    height: 9px;
+    width: 46%;
+    border-radius: 5px;
+  }
+  .ghost-song-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-radius: 14px;
+    border: 1px solid var(--box-border);
+    background: var(--box-bg);
+    min-height: 58px;
+    pointer-events: none;
+    user-select: none;
+  }
+  .ghost-song-art {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .ghost-song-details {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+  }
+  .ghost-pill {
+    width: 60px;
+    height: 26px;
+    border-radius: 13px;
+    flex-shrink: 0;
+  }
+  .ghost-badge {
+    display: inline-block;
+    width: 45px;
+    height: 13px;
+    border-radius: 6px;
+    vertical-align: middle;
+  }
+
   /* Song Card matching Mobile & PC UI */
   .home-song-card {
     position: relative;
@@ -6610,12 +6710,13 @@
     return fetch(url, { ...options, signal: ctrl.signal }).finally(() => clearTimeout(timer));
   }
 
-  async function ensureDirPermission(handle) {
+  async function ensureDirPermission(handle, isStartup = false) {
     if (!handle) return false;
     try {
       let perm = await handle.queryPermission({ mode: 'readwrite' });
       if (perm === 'granted') return true;
       if (perm === 'prompt') {
+        if (isStartup) return false;
         perm = await handle.requestPermission({ mode: 'readwrite' });
         return perm === 'granted';
       }
@@ -7362,15 +7463,19 @@
   }
 
   /* ---------- Sync with Designated Disk Folder (Detects Deleted or Added Files) ---------- */
-  async function syncDesignatedFolder() {
+  async function syncDesignatedFolder(isStartup = false) {
     if (!downloadDirHandle) {
+      if (isStartup) return;
       const picked = await chooseFolder();
       if (!picked || !downloadDirHandle) return;
     }
-    const hasPerm = await ensureDirPermission(downloadDirHandle);
-    if (!hasPerm) return toast('Folder permission required to sync files');
+    const hasPerm = await ensureDirPermission(downloadDirHandle, isStartup);
+    if (!hasPerm) {
+      if (!isStartup) toast('Folder permission required to sync files');
+      return;
+    }
 
-    toast(`Scanning 📁 ${downloadFolderName}...`);
+    if (!isStartup) toast(`Scanning 📁 ${downloadFolderName}...`);
     const diskFileNames = new Set();
     const diskLrc = {};
     const newFiles = [];
@@ -7461,9 +7566,15 @@
       renderDisc();
     }
 
-    toast(cleanedCount || newFiles.length
-      ? `Sync complete: ${cleanedCount ? `${cleanedCount} deleted files removed · ` : ''}${newFiles.length ? `${newFiles.length} new songs added` : 'library updated'}`
-      : `Sync complete: Library is up to date with 📁 ${downloadFolderName}`);
+    if (isStartup) {
+      if (cleanedCount > 0 || newFiles.length > 0) {
+        toast(`Synced music: +${newFiles.length} new · -${cleanedCount} removed`);
+      }
+    } else {
+      toast(cleanedCount || newFiles.length
+        ? `Sync complete: ${cleanedCount ? `${cleanedCount} deleted files removed · ` : ''}${newFiles.length ? `${newFiles.length} new songs added` : 'library updated'}`
+        : `Sync complete: Library is up to date with 📁 ${downloadFolderName}`);
+    }
   }
 
   // Re-verify active song when user switches back to the window/tab
@@ -8860,6 +8971,12 @@
     const rowEl = $('recentlyPlayedList');
     if (!secEl || !rowEl) return;
 
+    if (isInitialLoading && (!songs || songs.length === 0)) {
+      secEl.classList.remove('mobile-empty');
+      secEl.style.display = '';
+      return;
+    }
+
     if (homeSearchQuery) {
       secEl.classList.add('search-hidden');
       secEl.style.display = 'none';
@@ -8948,6 +9065,10 @@
     const sugListEl = $('pcSuggestionsList');
     const sugCountEl = $('pcSuggestionsCount');
 
+    if (isInitialLoading && (!songs || songs.length === 0)) {
+      return;
+    }
+
     // Pane 2: Recently Played songs
     if (recListEl) {
       const recentPool = [];
@@ -9001,10 +9122,76 @@
     }
   }
 
+  let isInitialLoading = true;
+
+  function renderGhostHomeScreen() {
+    const listEl = $('homeSongsList');
+    const recListEl = $('recentlyPlayedList');
+    const countEl = $('homeSongCount');
+    if (countEl) {
+      countEl.innerHTML = '<span class="ghost-shimmer ghost-badge"></span>';
+    }
+    if (recListEl) {
+      let ghostCards = '';
+      for (let i = 0; i < 4; i++) {
+        ghostCards += `
+          <div class="ghost-recent-card">
+            <div class="ghost-shimmer ghost-thumb"></div>
+            <div class="ghost-shimmer ghost-line-title"></div>
+            <div class="ghost-shimmer ghost-line-sub"></div>
+          </div>
+        `;
+      }
+      recListEl.innerHTML = ghostCards;
+    }
+    if (listEl) {
+      let ghostRows = '';
+      for (let i = 0; i < 7; i++) {
+        const w1 = [64, 52, 70, 48, 58, 62, 50][i % 7];
+        const w2 = [38, 30, 44, 28, 36, 40, 32][i % 7];
+        ghostRows += `
+          <div class="ghost-song-card">
+            <div class="ghost-shimmer ghost-song-art"></div>
+            <div class="ghost-song-details">
+              <div class="ghost-shimmer ghost-line-title" style="width: ${w1}%;"></div>
+              <div class="ghost-shimmer ghost-line-sub" style="width: ${w2}%;"></div>
+            </div>
+            <div class="ghost-shimmer ghost-pill"></div>
+          </div>
+        `;
+      }
+      listEl.innerHTML = ghostRows;
+    }
+
+    const pcRec = $('pcRecentlyPlayedList');
+    const pcSug = $('pcSuggestionsList');
+    if (pcRec) {
+      let pcGhost = '';
+      for (let i = 0; i < 5; i++) {
+        pcGhost += `
+          <div class="ghost-song-card">
+            <div class="ghost-shimmer ghost-song-art"></div>
+            <div class="ghost-song-details">
+              <div class="ghost-shimmer ghost-line-title" style="width: 60%;"></div>
+              <div class="ghost-shimmer ghost-line-sub" style="width: 35%;"></div>
+            </div>
+          </div>
+        `;
+      }
+      pcRec.innerHTML = pcGhost;
+      if (pcSug) pcSug.innerHTML = pcGhost;
+    }
+  }
+
   function renderHomePage() {
     const listEl = $('homeSongsList');
     const countEl = $('homeSongCount');
     if (!listEl) return;
+
+    if (isInitialLoading && (!songs || songs.length === 0)) {
+      renderGhostHomeScreen();
+      return;
+    }
 
     if (countEl) countEl.textContent = `${songs.length} song${songs.length === 1 ? '' : 's'}`;
 
@@ -10528,15 +10715,71 @@
     }
   });
 
+  async function startupSync() {
+    renderGhostHomeScreen();
+
+    // 1. Ensure downloadDirHandle is loaded (from IndexedDB, Python desktop bridge, or Android)
+    try {
+      if (!downloadDirHandle) {
+        const handle = await loadDirHandleFromDB();
+        if (handle) {
+          downloadDirHandle = handle;
+          downloadFolderName = handle.name || downloadFolderName;
+        }
+      }
+      if (!downloadDirHandle && window.__desktopBridge && typeof window.__desktopBridge.loadSettings === 'function') {
+        const cfg = await window.__desktopBridge.loadSettings();
+        if (cfg && cfg.linked_dir) {
+          downloadDirHandle = window.__desktopBridge.reviveHandle({
+            kind: 'directory',
+            __desktopDir: cfg.linked_dir,
+            name: cfg.folder_name || 'Music'
+          });
+          downloadFolderName = cfg.folder_name || 'Music';
+        }
+      }
+      updateFolderUI();
+    } catch (_) {}
+
+    // 2. Restore cached library from IndexedDB
+    try {
+      await restoreLibraryFromDB();
+      if (songs && songs.length > 0) {
+        isInitialLoading = false;
+        renderHomePage();
+        renderLists();
+        updateMiniPlayer();
+      }
+    } catch (_) {}
+
+    // 3. Automatically sync with music folder every time on startup!
+    if (downloadDirHandle) {
+      try {
+        const hasPerm = await ensureDirPermission(downloadDirHandle, true);
+        if (hasPerm) {
+          await syncDesignatedFolder(true);
+        }
+      } catch (e) {
+        console.warn('Startup folder sync error:', e);
+      }
+    }
+
+    // 4. Mark loading complete and reveal final loaded state
+    isInitialLoading = false;
+    renderHomePage();
+    renderLists();
+    updateMiniPlayer();
+  }
+
   isPlayerInitialized = true;
   updateVolumeUI();
   onPlayerScroll();
   refreshComplementingDiscArt();
   renderDisc();
   renderLists();
-  renderHomePage();
+  renderGhostHomeScreen();
   updateMiniPlayer();
-  restoreLibraryFromDB();
+  startupSync();
 })();
 </script>
 </body>
