@@ -16,6 +16,7 @@ android/app/build/
 *.mp3player-tmp
 *.idsig
 *.zip
+*.apk
 *.keystore
 *.jks
 
