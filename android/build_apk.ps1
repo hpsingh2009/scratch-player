@@ -29,11 +29,13 @@ New-Item -ItemType Directory -Force -Path "$buildDir\obj" | Out-Null
 New-Item -ItemType Directory -Force -Path "$buildDir\dex" | Out-Null
 New-Item -ItemType Directory -Force -Path $assetsDir | Out-Null
 
-# 1. Copy latest web app assets
-$srcHtml = if (Test-Path "$projDir\mp3player\ui\index.html") { "$projDir\mp3player\ui\index.html" } else { "$projDir\index.html" }
-$srcBridge = if (Test-Path "$projDir\mp3player\ui\desktop-bridge.js") { "$projDir\mp3player\ui\desktop-bridge.js" } else { "$projDir\desktop-bridge.js" }
-Copy-Item $srcHtml "$assetsDir\index.html" -Force
-Copy-Item $srcBridge "$assetsDir\desktop-bridge.js" -Force
+# 1. Sync latest web app assets if present in parent, or use local self-contained assets
+if (Test-Path "$projDir\mp3player\ui\index.html") {
+    Copy-Item "$projDir\mp3player\ui\index.html" "$assetsDir\index.html" -Force
+}
+if (Test-Path "$projDir\mp3player\ui\desktop-bridge.js") {
+    Copy-Item "$projDir\mp3player\ui\desktop-bridge.js" "$assetsDir\desktop-bridge.js" -Force
+}
 
 # 2. Compile resources with aapt2
 & $aapt2 compile --dir "$androidDir\res" -o "$buildDir\res.zip"
@@ -84,7 +86,7 @@ if (!(Test-Path $keystore)) {
     -dname "CN=MP3 Player, OU=Music, O=MP3Player, L=City, S=State, C=US"
 }
 
-$outApk = "$projDir\MP3-Player.apk"
+$outApk = "$androidDir\MP3-Player.apk"
 & $java -jar $apksignerJar sign `
   --ks $keystore `
   --ks-key-alias mp3player `
@@ -96,6 +98,11 @@ if ($LASTEXITCODE -ne 0) { throw "apksigner sign failed" }
 
 & $java -jar $apksignerJar verify --verbose $outApk
 if ($LASTEXITCODE -ne 0) { throw "apksigner verify failed" }
+
+# Also mirror to parent project root for convenience
+if (Test-Path $projDir) {
+    Copy-Item $outApk "$projDir\MP3-Player.apk" -Force
+}
 
 Write-Host "APK_BUILD_SUCCESS: $outApk"
 Get-Item $outApk | Select-Object FullName, Length, LastWriteTime
