@@ -30,8 +30,10 @@ New-Item -ItemType Directory -Force -Path "$buildDir\dex" | Out-Null
 New-Item -ItemType Directory -Force -Path $assetsDir | Out-Null
 
 # 1. Copy latest web app assets
-Copy-Item "$projDir\index.html" "$assetsDir\index.html" -Force
-Copy-Item "$projDir\desktop-bridge.js" "$assetsDir\desktop-bridge.js" -Force
+$srcHtml = if (Test-Path "$projDir\mp3player\ui\index.html") { "$projDir\mp3player\ui\index.html" } else { "$projDir\index.html" }
+$srcBridge = if (Test-Path "$projDir\mp3player\ui\desktop-bridge.js") { "$projDir\mp3player\ui\desktop-bridge.js" } else { "$projDir\desktop-bridge.js" }
+Copy-Item $srcHtml "$assetsDir\index.html" -Force
+Copy-Item $srcBridge "$assetsDir\desktop-bridge.js" -Force
 
 # 2. Compile resources with aapt2
 & $aapt2 compile --dir "$androidDir\res" -o "$buildDir\res.zip"

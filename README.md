@@ -1,10 +1,10 @@
 # Modern MP3 Player 🎵
 
-A feature-rich, responsive music player designed for Desktop, Web, and Android. It features an interactive DJ vinyl record turntable with real-time audio scratching, synchronized lyrics parsing, automated folder synchronization, and embedded metadata extraction.
+A feature-rich, responsive music player desktop application written in **Python**. It features an interactive DJ vinyl record turntable with real-time audio scratching, synchronized lyrics parsing, automated folder synchronization, and embedded metadata extraction.
 
 ---
 
-## 🌟 Key Features
+## 🎧 Key Features
 
 - **Interactive DJ Vinyl Turntable**:
   - Real-time vinyl scratching powered by the Web Audio API with rotational angle tracking.
@@ -13,17 +13,14 @@ A feature-rich, responsive music player designed for Desktop, Web, and Android. 
   - Displays timed LRC lyrics with smooth auto-scroll.
   - Automatically loads `.lrc` files from the music folder or embedded ID3v2 / M4A metadata.
 - **Embedded Metadata & Cover Art**:
-  - Pure JavaScript and Python tag extractors for ID3v2 (`TIT2`, `TPE1`, `APIC`) and MP4/M4A (`©nam`, `©ART`, `covr`).
+  - Tag extractors for ID3v2 (`TIT2`, `TPE1`, `APIC`) and MP4/M4A (`©nam`, `©ART`, `covr`).
   - Automatic bidirectional Title/Artist disambiguation.
 - **Configurable Music Folder & Sync**:
   - Seamlessly links to your local music directory (`C:\Users\<User>\Music` or Android Storage Access Framework).
   - Automatically syncs newly added or removed songs with a single click.
-- **System Media Controls**:
-  - MediaSession API integration for Windows volume flyouts, Android lock screen, and system notification controls.
-- **Cross-Platform**:
-  - **Desktop**: Standalone executable using lightweight Python WebView.
-  - **Android**: Native APK with background `PlaybackService` and MediaStyle notifications.
-  - **Web**: Progressive standalone responsive web app.
+- **Desktop Architecture**:
+  - Clean, modular Python package (`mp3player`) with native window management via `pywebview`.
+  - Native file/folder pickers, atomic file saving, and background metadata caching.
 
 ---
 
@@ -31,39 +28,36 @@ A feature-rich, responsive music player designed for Desktop, Web, and Android. 
 
 ```text
 mp3-player/
-├── index.html            # Core HTML5, CSS3 & JavaScript application
-├── app.py                # Python desktop bridge (pywebview + metadata server)
-├── desktop-bridge.js     # Desktop File System Access & RPC polyfill
-├── MP3-Player.apk        # Compiled & signed Android package
-├── android/              # Native Android project source & build scripts
-│   ├── src/              # Android Java source (MainActivity & PlaybackService)
-│   ├── assets/           # Bundled web assets
-│   └── build_apk.ps1     # Automated APK compilation script
-└── README.md
+├── main.py                 # Primary Python application entry point
+├── app.py                  # Backward-compatible Python entry point
+├── requirements.txt        # Python dependencies (pywebview, mutagen)
+├── mp3player/              # Core Python package
+│   ├── __init__.py         # Package metadata & constants
+│   ├── app.py              # Window lifecycle & desktop API
+│   ├── server.py           # Local bridge HTTP server & RPC routes
+│   ├── storage.py          # Settings & library JSON persistence
+│   ├── metadata.py         # Tag extractor & artist/title resolver
+│   ├── lyrics.py           # LRC lyrics parser & disk cache
+│   └── ui/                 # Embedded original GUI assets
+│       ├── index.html      # Original HTML5 / CSS3 / Web Audio Turntable UI
+│       └── desktop-bridge.js
+└── android/                # Native Android companion build
+    ├── src/                # Android Java background service & notifications
+    └── build_apk.ps1       # Automated APK compilation script
 ```
 
 ---
 
 ## 🚀 Running the Project
 
-### 1. Web Version
-Open `index.html` directly in any modern browser (Chrome, Edge, Firefox, Safari).
-
-### 2. Desktop App (Python WebView)
-Ensure Python 3.10+ is installed with `pywebview`:
+Ensure Python 3.10+ is installed:
 ```bash
-pip install pywebview
-python app.py
+pip install -r requirements.txt
+python main.py
 ```
-
-### 3. Android APK
-Install `MP3-Player.apk` onto your Android device:
-```bash
-adb install -r MP3-Player.apk
-```
-Or transfer `MP3-Player.apk` to your phone and tap to install.
+*(You can also run `python app.py`)*
 
 ---
 
-## 📜 License
+## 📄 License
 MIT License. Free to use and modify.
