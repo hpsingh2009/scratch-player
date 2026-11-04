@@ -99,10 +99,7 @@ if ($LASTEXITCODE -ne 0) { throw "apksigner sign failed" }
 & $java -jar $apksignerJar verify --verbose $outApk
 if ($LASTEXITCODE -ne 0) { throw "apksigner verify failed" }
 
-# Also mirror to parent project root for convenience
-if (Test-Path $projDir) {
-    Copy-Item $outApk "$projDir\MP3-Player.apk" -Force
-}
+
 
 Write-Host "APK_BUILD_SUCCESS: $outApk"
 Get-Item $outApk | Select-Object FullName, Length, LastWriteTime

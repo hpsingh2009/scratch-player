@@ -29,7 +29,6 @@ A feature-rich, responsive music player desktop application written in **Python*
 ```text
 mp3-player/
 ├── main.py                 # Primary Python application entry point
-├── app.py                  # Backward-compatible Python entry point
 ├── requirements.txt        # Python dependencies (pywebview, mutagen)
 ├── mp3player/              # Core Python package
 │   ├── __init__.py         # Package metadata & constants
@@ -43,7 +42,8 @@ mp3-player/
 │       └── desktop-bridge.js
 └── android/                # Native Android companion build
     ├── src/                # Android Java background service & notifications
-    └── build_apk.ps1       # Automated APK compilation script
+    ├── build_apk.ps1       # Automated APK compilation script
+    └── README.md
 ```
 
 ---
@@ -55,7 +55,6 @@ Ensure Python 3.10+ is installed:
 pip install -r requirements.txt
 python main.py
 ```
-*(You can also run `python app.py`)*
 
 ---
 
